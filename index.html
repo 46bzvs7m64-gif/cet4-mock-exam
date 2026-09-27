@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16365c">
+<title>大学生英语四级全真模考系统</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html{font-size:16px;-webkit-text-size-adjust:100%}
+  body{font-family:"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:#eef2f7;color:#0f172a}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+  .letter-badge{flex:none;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:600;border:1.5px solid #cbd5e1;color:#475569;background:#fff;transition:all .15s}
+  .opt-act .letter-badge{background:#2563eb;border-color:#2563eb;color:#fff}
+  .opt-ok .letter-badge{background:#16a34a;border-color:#16a34a;color:#fff}
+  .opt-bad .letter-badge{background:#dc2626;border-color:#dc2626;color:#fff}
+  details > summary{list-style:none;cursor:pointer}
+  details > summary::-webkit-details-marker{display:none}
+  .passage-details summary::before{content:"▸ ";display:inline-block;transition:transform .2s;color:#64748b}
+  .passage-details[open] summary::before{transform:rotate(90deg)}
+  .play-btn.playing{background:#dc2626!important;border-color:#dc2626!important}
+  .modal-mask{background:rgba(15,23,42,.55);backdrop-filter:blur(2px)}
+  @keyframes pulseWarn{0%,100%{opacity:1}50%{opacity:.55}}
+  .timer-danger{animation:pulseWarn 1s infinite}
+  .fade-in{animation:fadeIn .25s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ 全局顶栏（考试页隐藏） ============ -->
+<header id="topbar" class="bg-[#16365c] text-white shadow-md sticky top-0 z-40">
+  <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+    <button onclick="go('home')" class="flex items-center gap-2.5 font-semibold tracking-wide">
+      <span class="w-8 h-8 rounded-md bg-white/15 flex items-center justify-center text-sm">CET</span>
+      <span class="text-[15px] sm:text-base">大学生英语四级 · 全真模考系统</span>
+    </button>
+    <button onclick="go('home')" class="text-sm text-white/80 hover:text-white">返回首页</button>
+  </div>
+</header>
+
+<main id="app" class="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6"></main>
+
+<script>
+/* ============================================================
+ * 一、考试配置 & localStorage 工具
+ * ============================================================ */
+const EXAM_MIN = 125;                 // CET-4 总时长 125 分钟
+const TOTAL_Q  = 45;
+const FULL     = 710;                 // 满分
+const PASS     = 425;                 // 合格线
+const SEC_MAX  = { listening:248.5, reading:248.5, translation:213 };
+const SECTIONS = {
+  listening:   { name:'听力理解', short:'听力', cls:'bg-blue-100 text-blue-800' },
+  reading:     { name:'阅读理解', short:'阅读', cls:'bg-teal-100 text-teal-800' },
+  translation: { name:'翻译',     short:'翻译', cls:'bg-amber-100 text-amber-800' }
+};
+const K = { draft:'cet4_draft', wrong:'cet4_wrong', history:'cet4_history', log:'cet4_practice_log' };
+
+const LS = {
+  get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } },
+  set(k,v){ localStorage.setItem(k,JSON.stringify(v)); },
+  del(k){ localStorage.removeItem(k); }
+};
+
+/* ============================================================
+ * 二、听力 / 阅读材料（PASSAGES）
+ * ============================================================ */
+const PASSAGES = {
+  /* ---- 听力 News Report 1（Q1-2） ---- */
+  l_news1:{ type:'audio', title:'News Report One',
+    text:"A severe storm hit the coastal town of Brightwood on Monday afternoon, bringing heavy rain and winds of up to eighty miles per hour. The storm caused flooding in several streets and forced the evacuation of about two hundred homes. No serious injuries have been reported. Local authorities said power had been restored to most areas by Tuesday morning, and residents were advised to avoid unnecessary travel until the floodwater recedes." },
+  /* ---- 听力 News Report 2（Q3-4） ---- */
+  l_news2:{ type:'audio', title:'News Report Two',
+    text:"The city's first fully automated convenience store opened to the public on Thursday. Customers can enter the store using a mobile app, pick up products, and leave without waiting in line, as sensors and cameras automatically charge their accounts. The store manager said the new technology reduces labor costs and shortens shopping time to about one minute. However, some local residents worry that such stores may reduce job opportunities for young people." },
+  /* ---- 听力 News Report 3（Q5-7） ---- */
+  l_news3:{ type:'audio', title:'News Report Three',
+    text:"A recent survey of two thousand college graduates shows that more than sixty percent of them plan to pursue further study instead of entering the job market immediately. Researchers say the increasing competition and the desire for better qualifications are the main reasons. The survey also found that graduates with internship experience received job offers thirty percent more often than those without. Experts suggest universities should provide more practical training to help students prepare for their careers." },
+  /* ---- 听力 Long Conversation（Q8-11） ---- */
+  l_conv:{ type:'audio', title:'Long Conversation',
+    text:"M: Hi, Sarah, you look worried. What's wrong?  W: Hi, Tom. I'm working on my marketing presentation, but I can't find enough data for the part about consumer behavior.  M: Why not check the business database in the library? It has plenty of recent reports.  W: I tried, but my library account has expired, so I couldn't log in.  M: Oh, you can renew it online through the library website. It only takes a few minutes.  W: Really? I thought I had to go there in person.  M: No, just enter your student number and set a new password.  W: That's great. I'll do it right away. Thanks a lot.  M: No problem. Let me know if you need help analyzing the data." },
+  /* ---- 听力 Passage（Q12-15） ---- */
+  l_pass:{ type:'audio', title:'Listening Passage',
+    text:"Getting enough sleep is essential for students' academic performance, according to a new study. Researchers followed five hundred university students for one semester and found that those who slept less than six hours a night were twice as likely to fail their exams. The study also showed that students with regular sleep schedules remembered twenty-five percent more of what they had studied than those who often stayed up late. Researchers explain that during sleep the brain organizes new information and strengthens memory. They recommend students sleep at least seven hours and avoid using phones half an hour before bedtime." },
+
+  /* ---- 阅读 Section A 词汇理解（Q16-23） ---- */
+  r_cloze:{ type:'text', title:'Section A  词汇理解',
+    dir:'Directions: Read the following passage and choose the best word for each numbered blank.',
+    text:"Online learning has become increasingly popular in higher education. Unlike traditional classrooms, online courses allow students to learn at their own {{16}} and review difficult materials whenever they want. This flexibility is {{17}} beneficial to students who have part-time jobs. However, online learning also {{18}} strong self-discipline. Without a teacher watching over them, some students may {{19}} until the last minute and then rush through the material. To {{20}} in an online course, students should create a weekly study plan and set clear goals. They should also take an active part in online discussions, which can make learning less {{21}}. Research shows that students who communicate {{22}} with instructors usually perform better. In the future, online learning will probably not {{23}} traditional education, but it will certainly become an important part of it." },
+  /* ---- 阅读 Section B 长篇阅读匹配（Q24-29） ---- */
+  r_match:{ type:'match', title:'Section B  长篇阅读',
+    dir:'Directions: Match each statement with the paragraph from which the information is derived.',
+    paragraphs:[
+      {k:'A', t:"The Feynman Technique, named after the Nobel Prize-winning physicist Richard Feynman, asks learners to explain a concept using simple language as if teaching it to a child. Whenever you cannot explain something clearly, you have found a gap in your understanding that needs further study."},
+      {k:'B', t:"Spaced repetition means reviewing learned material at increasing intervals — for example, one day later, three days later, and then one week later. Reviewing information just before you are about to forget it greatly improves long-term retention."},
+      {k:'C', t:"The Pomodoro Technique divides work into twenty-five-minute focused sessions, each followed by a five-minute break. After four sessions, you take a longer rest. The short units help you keep concentrated and reduce the urge to check your phone."},
+      {k:'D', t:"Mind mapping uses a central topic placed in the middle of a page, with main branches spreading outward and smaller branches adding details. Turning notes into such a visual map helps learners discover how different ideas are connected."},
+      {k:'E', t:"Practice testing means testing yourself — with flashcards or self-made questions — instead of simply rereading notes. Research has repeatedly shown that the effort of recalling information produces far better learning results than passive review."}
+    ]},
+  /* ---- 阅读 Section C 仔细阅读 Passage 1（Q30-32） ---- */
+  r_p1:{ type:'text', title:'Section C  仔细阅读 · Passage 1',
+    dir:'Directions: Read the passage carefully and choose the best answer to each question.',
+    text:"Community gardens have appeared in many large cities over the past decade, transforming empty lots into green spaces where residents grow vegetables and flowers. Supporters argue that these gardens do more than make neighborhoods greener. They bring together people of different ages and backgrounds, strengthen social ties, and provide fresh produce in areas where supermarkets are scarce. Studies also suggest that working with soil reduces stress and improves mental health. However, community gardens face an uncertain future. As city land prices rise, many garden sites are sold to developers. Some cities have introduced long-term agreements to protect the gardens, but volunteers say greater legal protection is still needed." },
+  /* ---- 阅读 Section C 仔细阅读 Passage 2（Q33-35） ---- */
+  r_p2:{ type:'text', title:'Section C  仔细阅读 · Passage 2',
+    dir:'Directions: Read the passage carefully and choose the best answer to each question.',
+    text:"The number of electric vehicles on the world's roads has grown rapidly, but the environmental benefits of driving an electric vehicle depend heavily on where its electricity comes from. In regions powered mainly by coal, an electric vehicle still produces considerable indirect emissions, although fewer than a gasoline car. Where clean energy dominates, emissions can drop by more than seventy percent. Another challenge is the battery. Mining the metals needed for batteries can damage the environment, and old batteries require careful recycling. Researchers are developing batteries that last longer and use more common materials. Experts say that electric vehicles are not a complete solution by themselves, but an important step toward cleaner transport when paired with renewable energy." }
+};
+
+/* ============================================================
+ * 三、题库 45 题（听力15 / 阅读20 / 翻译10；含答案与解析）
+ * ============================================================ */
+const QUESTIONS = [
+/* ---------------- 听力理解 1-15 ---------------- */
+{id:1,section:'listening',type:'single',group:'l_news1',
+ q:'What do we learn about the storm from the news report?',
+ o:{A:'A severe storm struck a coastal town on Monday afternoon.',B:'The storm injured about two hundred people in Brightwood.',C:'Flooding across the region continued until Tuesday night.',D:'Strong winds destroyed most of the town’s power lines.'},
+ a:['A'],
+ e:'新闻首句点明“周一午后，强风暴袭击滨海小镇 Brightwood，风速高达每小时 80 英里”，A 项正确。报道说约 200 户家庭被疏散，并无 200 人受伤（B 错）；周二上午多数地区已恢复供电（C、D 错）。'},
+{id:2,section:'listening',type:'single',group:'l_news1',
+ q:'What were local residents advised to do?',
+ o:{A:'Stay indoors and never go outside.',B:'Move to the nearest shelter at once.',C:'Avoid unnecessary travel until the floodwater recedes.',D:'Help the authorities repair damaged power lines.'},
+ a:['C'],
+ e:'报道最后一句“residents were advised to avoid unnecessary travel until the floodwater recedes”，建议居民在洪水退去前避免不必要的出行，选 C。'},
+{id:3,section:'listening',type:'single',group:'l_news2',
+ q:'How do customers pay in the fully automated store?',
+ o:{A:'They pay cash before leaving the store.',B:'Their online accounts are charged automatically.',C:'They pay with a credit card at a counter.',D:'They receive a bill at the end of every month.'},
+ a:['B'],
+ e:'由“sensors and cameras automatically charge their accounts”可知，传感器和摄像头会自动从账户扣款，B 项正确，该店无需排队、没有收银柜台。'},
+{id:4,section:'listening',type:'single',group:'l_news2',
+ q:'What concern do some local residents have?',
+ o:{A:'Automated stores may reduce job opportunities for young people.',B:'Products in such stores will be more expensive.',C:'The new technology could threaten customers’ privacy.',D:'The system may slow down the mobile network.'},
+ a:['A'],
+ e:'新闻结尾提到居民担心“such stores may reduce job opportunities for young people”，即自动化商店可能减少年轻人的就业机会，选 A。'},
+{id:5,section:'listening',type:'single',group:'l_news3',
+ q:'What do more than sixty percent of the surveyed graduates plan to do?',
+ o:{A:'Start their own businesses after graduation.',B:'Take national civil service examinations.',C:'Pursue further study instead of working immediately.',D:'Apply for jobs in foreign companies.'},
+ a:['C'],
+ e:'调查显示超过 60% 的毕业生“plan to pursue further study instead of entering the job market immediately”，即计划继续深造，选 C。'},
+{id:6,section:'listening',type:'single',group:'l_news3',
+ q:'What are the main reasons behind the graduates’ decision?',
+ o:{A:'Lack of jobs in small cities and towns.',B:'Pressure from their parents and universities.',C:'The high salaries offered by graduate schools.',D:'Increasing competition and the desire for better qualifications.'},
+ a:['D'],
+ e:'研究人员指出主因是“the increasing competition and the desire for better qualifications”——竞争加剧以及希望获得更高学历，选 D。'},
+{id:7,section:'listening',type:'single',group:'l_news3',
+ q:'What does the survey find about graduates with internship experience?',
+ o:{A:'They earned thirty percent higher starting salaries.',B:'They were thirty percent more likely to receive job offers.',C:'They found jobs thirty days earlier than others.',D:'They were more confident during job interviews.'},
+ a:['B'],
+ e:'原文“graduates with internship experience received job offers thirty percent more often”，有实习经历者获得录用通知的几率高出 30%，选 B。'},
+{id:8,section:'listening',type:'single',group:'l_conv',
+ q:'What problem does Sarah have?',
+ o:{A:'She has failed to finish her marketing report on time.',B:'She cannot log into the business database because her library account expired.',C:'The data in her presentation were lost on the computer.',D:'She has forgotten the password of her student account.'},
+ a:['B'],
+ e:'Sarah 需要消费者行为数据，但“my library account has expired, so I couldn’t log in”，图书馆账户过期导致无法登录商业数据库，选 B。'},
+{id:9,section:'listening',type:'single',group:'l_conv',
+ q:'What does Tom suggest Sarah do?',
+ o:{A:'Go to the library in person immediately.',B:'Ask their professor for the consumer data.',C:'Renew her library account online.',D:'Buy recent reports from a business website.'},
+ a:['C'],
+ e:'Tom 建议“you can renew it online through the library website”，通过图书馆网站在线续期即可，选 C。'},
+{id:10,section:'listening',type:'single',group:'l_conv',
+ q:'What information does Sarah need to renew her account?',
+ o:{A:'Her student number and a new password.',B:'Her ID card number and mobile phone number.',C:'Her e-mail address and old password.',D:'Her bank card and student card.'},
+ a:['A'],
+ e:'Tom 说明续期只需“enter your student number and set a new password”，即学号并设置新密码，选 A。'},
+{id:11,section:'listening',type:'single',group:'l_conv',
+ q:'What does Tom offer to do at the end of the conversation?',
+ o:{A:'Lend Sarah his own library card.',B:'Help Sarah set a new password.',C:'Deliver the presentation in Sarah’s place.',D:'Help Sarah analyze the data.'},
+ a:['D'],
+ e:'对话结尾 Tom 说“Let me know if you need help analyzing the data”，主动提出帮忙分析数据，选 D。'},
+{id:12,section:'listening',type:'single',group:'l_pass',
+ q:'What is the main finding of the new study?',
+ o:{A:'Adequate sleep is closely connected with students’ academic performance.',B:'Most university students suffer from serious sleep disorders.',C:'Staying up late has become a fashionable lifestyle among students.',D:'Researchers have invented a new method to strengthen memory.'},
+ a:['A'],
+ e:'短文首句即主题句“Getting enough sleep is essential for students’ academic performance”，充足睡眠与学业表现密切相关，选 A。'},
+{id:13,section:'listening',type:'single',group:'l_pass',
+ q:'What happened to students who slept less than six hours a night?',
+ o:{A:'They gradually lost interest in their studies.',B:'They were unable to remember any new information.',C:'They were twice as likely to fail their exams.',D:'Their reading speed dropped by twenty-five percent.'},
+ a:['C'],
+ e:'原文“those who slept less than six hours a night were twice as likely to fail their exams”，每晚睡眠不足 6 小时者考试不及格的可能性翻倍，选 C。'},
+{id:14,section:'listening',type:'single',group:'l_pass',
+ q:'What was true of students with regular sleep schedules?',
+ o:{A:'They needed only six hours of sleep each night.',B:'They remembered twenty-five percent more of what they had studied.',C:'They spent twenty-five percent less time studying daily.',D:'They scored twenty-five points higher in mathematics.'},
+ a:['B'],
+ e:'原文“students with regular sleep schedules remembered twenty-five percent more of what they had studied”，作息规律者对所学内容的记忆多 25%，选 B。'},
+{id:15,section:'listening',type:'multi',group:'l_pass',
+ q:'What do researchers recommend students do? (多选)',
+ o:{A:'Sleep at least seven hours a day.',B:'Take vigorous exercise right before bedtime.',C:'Avoid using phones half an hour before going to bed.',D:'Stay up late to repeat newly learned information.'},
+ a:['A','C'],
+ e:'文末建议“sleep at least seven hours and avoid using phones half an hour before bedtime”，A、C 正确；睡前剧烈运动、熬夜重复信息均与建议相反。'},
+
+/* ---------------- 阅读理解 16-35 ---------------- */
+{id:16,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 16：online courses allow students to learn at their own ____.',
+ o:{A:'pace',B:'step',C:'rate',D:'rhythm'},
+ a:['A'], e:'at one’s own pace 为固定搭配，意为“按自己的节奏/速度”。step（脚步）、rate（比率）、rhythm（韵律）均不构成此搭配。'},
+{id:17,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 17：This flexibility is ____ beneficial to students who have part-time jobs.',
+ o:{A:'rarely',B:'particularly',C:'scarcely',D:'nearly'},
+ a:['B'], e:'particularly 意为“尤其、特别”，表示灵活性对兼职学生尤其有益。rarely/scarcely（几乎不）与文意相反；nearly（将近）语义不通。'},
+{id:18,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 18：online learning also ____ strong self-discipline.',
+ o:{A:'inquires',B:'acquires',C:'requires',D:'requests'},
+ a:['C'], e:'require 表示“需要、要求”，在线学习需要很强的自律。inquire 询问；acquire（通过努力）获得；request（礼貌地）请求。'},
+{id:19,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 19：some students may ____ until the last minute and then rush through the material.',
+ o:{A:'hesitate',B:'delay',C:'cancel',D:'complain'},
+ a:['B'], e:'delay 意为“拖延、推迟”，与 until the last minute 搭配，指拖到最后一刻。hesitate 犹豫（不及物，语义不符）；cancel 取消；complain 抱怨。'},
+{id:20,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 20：To ____ in an online course, students should create a weekly study plan.',
+ o:{A:'succeed',B:'insist',C:'persist',D:'assist'},
+ a:['A'], e:'succeed in sth. 表示“在……上取得成功”。insist on 坚持；persist in 执意；assist 帮助，搭配与语义均不符。'},
+{id:21,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 21：online discussions can make learning less ____.',
+ o:{A:'lonely',B:'logical',C:'legal',D:'local'},
+ a:['A'], e:'参与讨论能让学习不那么“孤单”，lonely 表示情感上的孤独。logical 合乎逻辑的；legal 合法的；local 当地的，均与语境无关。'},
+{id:22,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 22：students who communicate ____ with instructors usually perform better.',
+ o:{A:'regularly',B:'reluctantly',C:'roughly',D:'rarely'},
+ a:['A'], e:'regularly 定期地、经常地，指经常与老师沟通的学生表现更好。reluctantly 不情愿地；roughly 粗略地；rarely 很少。'},
+{id:23,section:'reading',type:'single',group:'r_cloze',
+ q:'Blank 23：online learning will probably not ____ traditional education.',
+ o:{A:'replace',B:'remove',C:'recall',D:'repeat'},
+ a:['A'], e:'replace 取代、代替，意为在线教育不会取代传统教育。remove 移除；recall 回忆；repeat 重复。'},
+{id:24,section:'reading',type:'single',group:'r_match',
+ q:'You divide study time into short focused units separated by brief rests.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['C'], e:'题干“把学习时间切分为短的专注单元并短暂休息”对应 [C] 番茄工作法：25 分钟专注 + 5 分钟休息。'},
+{id:25,section:'reading',type:'single',group:'r_match',
+ q:'Explaining a concept in plain words reveals what you have not yet understood.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['A'], e:'题干“用简单语言讲解概念能暴露理解上的缺口”对应 [A] 费曼技巧：讲不清楚的地方就是需要再学习之处。'},
+{id:26,section:'reading',type:'single',group:'r_match',
+ q:'Reviewing material right before you forget it helps build long-term memory.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['B'], e:'题干“在快要遗忘时复习有助于长期记忆”对应 [B] 间隔重复：按递增的时间间隔复习。'},
+{id:27,section:'reading',type:'single',group:'r_match',
+ q:'Information arranged in a branching diagram shows how ideas connect.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['D'], e:'题干“以分支图组织信息、呈现观点之间的联系”对应 [D] 思维导图（mind mapping）。'},
+{id:28,section:'reading',type:'single',group:'r_match',
+ q:'Answering questions on your own works better than reading notes repeatedly.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['E'], e:'题干“自测比反复看笔记效果好”对应 [E] 练习测试法：主动回忆远胜于被动复习。'},
+{id:29,section:'reading',type:'single',group:'r_match',
+ q:'This method is named after a physicist famous for simplifying complex ideas.',
+ o:{A:'Paragraph A',B:'Paragraph B',C:'Paragraph C',D:'Paragraph D',E:'Paragraph E'},
+ a:['A'], e:'题干“以一位善于简化复杂概念的物理学家命名”对应 [A] 费曼技巧，得名于诺贝尔奖物理学家 Richard Feynman。'},
+{id:30,section:'reading',type:'single',group:'r_p1',
+ q:'What is the passage mainly about?',
+ o:{A:'The benefits and challenges of community gardens',B:'How residents build community gardens in big cities',C:'Why city land prices keep rising sharply',D:'The long history of urban agriculture worldwide'},
+ a:['A'], e:'文章前半部分讲社区花园的多重益处（绿化、社交、新鲜蔬果、减压），后半部分讲其面临的征地威胁，故主旨为“益处与挑战”，选 A。'},
+{id:31,section:'reading',type:'single',group:'r_p1',
+ q:'Which of the following is NOT mentioned as a benefit of community gardens?',
+ o:{A:'Providing fresh produce',B:'Strengthening social ties',C:'Raising local property values',D:'Reducing stress and improving mental health'},
+ a:['C'], e:'文中提到 fresh produce、social ties、reduces stress and improves mental health，唯独没有提到“提升房产价值”，选 C。'},
+{id:32,section:'reading',type:'single',group:'r_p1',
+ q:'Why do community gardens face an uncertain future?',
+ o:{A:'There are fewer and fewer volunteer gardeners',B:'Rising land prices lead many sites to be sold to developers',C:'City traffic causes serious pollution to the soil',D:'Supermarkets offer strong competition to the gardens'},
+ a:['B'], e:'由“As city land prices rise, many garden sites are sold to developers”可知，地价上涨、地块被卖给开发商使花园前途未卜，选 B。'},
+{id:33,section:'reading',type:'single',group:'r_p2',
+ q:'What largely determines the environmental benefits of an electric vehicle?',
+ o:{A:'The brand of the vehicle',B:'The driving habits of its owner',C:'The current price of gasoline',D:'The source of the electricity it uses'},
+ a:['D'], e:'文章首句指出环保效益“depend heavily on where its electricity comes from”，即取决于电力来源，选 D。'},
+{id:34,section:'reading',type:'single',group:'r_p2',
+ q:'How much can emissions fall in regions dominated by clean energy?',
+ o:{A:'By about 30 percent',B:'By around 50 percent',C:'By more than 70 percent',D:'By exactly 100 percent'},
+ a:['C'], e:'原文“Where clean energy dominates, emissions can drop by more than seventy percent”，降幅可超过 70%，选 C。'},
+{id:35,section:'reading',type:'multi',group:'r_p2',
+ q:'Which challenges concerning electric vehicles are mentioned? (多选)',
+ o:{A:'Indirect emissions where electricity comes mainly from coal',B:'Environmental damage caused by mining battery metals',C:'The need to recycle old batteries carefully',D:'The rapidly rising purchase price of the vehicles'},
+ a:['A','B','C'], e:'文章提到：燃煤电力导致的间接排放（A）、开采电池金属破坏环境（B）、旧电池需要谨慎回收（C）；整车价格上涨（D）未提及。'},
+
+/* ---------------- 翻译 36-45 ---------------- */
+{id:36,section:'translation',type:'single',group:null,
+ q:'他直到完成作业才上床睡觉。',
+ o:{A:'He did not go to bed until he finished his homework.',B:'He went to bed until he finished his homework.',C:'Until he finished his homework, he went to bed.',D:'He not went to bed before he finished his homework.'},
+ a:['A'], e:'“直到……才……”用 not … until … 结构：主句用否定，until 引导时间状语，选 A。B、C 肯定句与 until 连用表示“一直做到……”，语义错误；D 中助动词形式错误。'},
+{id:37,section:'translation',type:'single',group:null,
+ q:'这本书是为初学者设计的。',
+ o:{A:'This book is designed for beginners.',B:'This book designs for beginners.',C:'This book is designing by beginners.',D:'This book designed for beginners.'},
+ a:['A'], e:'“为……设计”用 be designed for，被动语态，选 A。B、D 缺被动助动词；C 结构与语义均错误。'},
+{id:38,section:'translation',type:'single',group:null,
+ q:'正是他的努力使他取得了成功。',
+ o:{A:'It was his hard work that led to his success.',B:'It is his hard work which leads him success.',C:'That was his hard work led to his success.',D:'His hard work was that led to his success.'},
+ a:['A'], e:'强调句结构 It is/was + 被强调部分 + that …，强调主语 his hard work，选 A。lead sb. sth. 搭配不当（B）；C、D 句式杂糅。'},
+{id:39,section:'translation',type:'single',group:null,
+ q:'众所周知，吸烟有害健康。',
+ o:{A:'As is known to all, smoking is harmful to health.',B:'As is known all, smoke is harm for health.',C:'It is known for all that smoking harms healthy.',D:'Which is known to all, smoking is harmful for health.'},
+ a:['A'], e:'As is known to all 为固定非限制性定语从句；be harmful to 表示“对……有害”；动名词 smoking 作主语，选 A。'},
+{id:40,section:'translation',type:'multi',group:null,
+ q:'“我宁愿步行也不愿挤地铁”的正确译法是：（多选）',
+ o:{A:'I would rather walk than take the crowded subway.',B:'I prefer walking to taking the crowded subway.',C:'I would rather to walk than to take the crowded subway.',D:'I prefer to walk than take the crowded subway.'},
+ a:['A','B'], e:'would rather do A than do B（宁愿做 A 也不做 B）；prefer doing A to doing B，A、B 正确。would rather 后接动词原形（C 错）；prefer 不与 than 直接搭配（D 错）。'},
+{id:41,section:'translation',type:'single',group:null,
+ q:'他建议会议推迟到下周。',
+ o:{A:'He suggested that the meeting (should) be put off until next week.',B:'He suggested the meeting would put off until next week.',C:'He suggested that the meeting put off until next week.',D:'He suggested the meeting to be put off until next week.'},
+ a:['A'], e:'suggest 后接宾语从句用虚拟语气 (should) + 动词原形；会议“被推迟”需用被动 be put off，选 A。suggest 不接 suggest sth. to do 结构（D 错）。'},
+{id:42,section:'translation',type:'single',group:null,
+ q:'多背单词，你的英语就会提高。',
+ o:{A:'Memorize more words, and your English will improve.',B:'Memorizing more words, your English will improve.',C:'Memorize more words, your English improves.',D:'To memorize more words, and English will be improved.'},
+ a:['A'], e:'“祈使句 + and + 陈述句（一般将来时）”表示条件与结果，选 A。B 为悬垂修饰；C 缺连词且时态不当；D 结构混乱。'},
+{id:43,section:'translation',type:'single',group:null,
+ q:'这就是他昨天迟到的原因。',
+ o:{A:'This is why he was late yesterday.',B:'This is why was he late yesterday.',C:'This is the reason why he is late yesterday.',D:'This is because he was late yesterday.'},
+ a:['A'], e:'This is why … 中 why 引导表语从句，从句用陈述语序，且 yesterday 对应一般过去时，选 A。D 中 because 表原因，不能表示“……的原因”。'},
+{id:44,section:'translation',type:'multi',group:null,
+ q:'“这部电影值得再看一遍”的正确译法是：（多选）',
+ o:{A:'The film is worth seeing again.',B:'The film is worthy to see again.',C:'It is worthwhile to see the film again.',D:'The film is worth to see again.'},
+ a:['A','C'], e:'be worth doing（主动形式表被动意义）；It is worthwhile to do sth.，A、C 正确。worthy 后须接 of being done 或 to be done（B 错）；worth 后不接不定式（D 错）。'},
+{id:45,section:'translation',type:'single',group:null,
+ q:'直到失去健康，人们才知道它的珍贵。',
+ o:{A:'Until people lose their health, they realize its value.',B:'Not until people lose their health do they realize its value.',C:'People realize the value of health until they lose it.',D:'Not until people lose their health they realize its value.'},
+ a:['B'], e:'Not until 置于句首时，主句须部分倒装：助动词 do 提前，选 B。A、C 为肯定句与 until 连用，语义相反；D 未倒装。'}
+];
+const QMAP = Object.fromEntries(QUESTIONS.map(q=>[q.id,q]));
+const SECTION_RANGE = [['listening',1,15],['reading',16,35],['translation',36,45]];
+
+/* ============================================================
+ * 四、全局状态
+ * ============================================================ */
+let exam = null;        // 考试进行态 {answers, marks, idx, remaining}
+let practice = null;    // 刷题态 {ids, idx, sel, revealed, results, mode}
+let wrongBook = LS.get(K.wrong,[]);
+let history   = LS.get(K.history,[]);
+let pLog      = LS.get(K.log,{});
+let lastResult= null;
+let timerId   = null;
+
+/* ============================================================
+ * 五、通用工具
+ * ============================================================ */
+const $ = s=>document.querySelector(s);
+const fmt = sec=>{ const m=Math.floor(sec/60), s=sec%60; return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); };
+const esc = s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* 单题得分率：全对1，半对半错按比例扣分 */
+function ratioOf(q, sel){
+  if(!sel || !sel.length) return 0;
+  const right = sel.filter(k=>q.a.includes(k)).length;
+  const wrong = sel.filter(k=>!q.a.includes(k)).length;
+  return Math.max(0,(right-wrong))/q.a.length;
+}
+
+/* 浏览器语音合成播放听力（无音频文件也能“听”） */
+function speakGroup(key, ev){
+  const t = PASSAGES[key].text;
+  if(!('speechSynthesis' in window)){ alert('当前浏览器不支持语音播放，请在解析中查看听力原文。'); return; }
+  if(speechSynthesis.speaking || speechSynthesis.pending){ speechSynthesis.cancel(); return; }
+  const u = new SpeechSynthesisUtterance(t.replace(/\s+/g,' '));
+  u.lang='en-US'; u.rate=.92;
+  speechSynthesis.speak(u);
+  if(ev){ const b=ev.currentTarget; b.classList.add('playing'); u.onend=()=>b.classList.remove('playing'); }
+}
+
+/* ============================================================
+ * 六、视图路由
+ * ============================================================ */
+function go(view){
+  if(timerId && view!=='exam'){ /* 考试中切走不停止计时（仅考试页内操作） */ }
+  $('#topbar').style.display = (view==='exam') ? 'none' : '';
+  const app=$('#app');
+  app.className='fade-in '+(view==='exam'?'':'max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6');
+  if(view==='home')      app.innerHTML=viewHome();
+  else if(view==='examIntro') app.innerHTML=viewExamIntro();
+  else if(view==='exam') app.innerHTML=viewExamShell();
+  else if(view==='result') app.innerHTML=viewResult();
+  else if(view==='practice') app.innerHTML=viewPractice();
+  else if(view==='wrong') app.innerHTML=viewWrong();
+  else if(view==='history') app.innerHTML=viewHistory();
+  window.scrollTo(0,0);
+}
+
+/* ============================================================
+ * 七、首页仪表盘
+ * ============================================================ */
+function statCards(){
+  const examCount = history.length;
+  const avg = examCount?Math.round(history.reduce((a,b)=>a+b.total,0)/examCount):0;
+  const best= examCount?Math.max(...history.map(h=>h.total)):0;
+  const attempts = Object.values(pLog).reduce((a,b)=>a+b.n,0);
+  const cards=[
+    {label:'模考次数',value:examCount,sub:'场全真模拟',color:'bg-blue-600'},
+    {label:'错题数量',value:wrongBook.length,sub:'道待复习',color:'bg-red-500'},
+    {label:'累计刷题',value:attempts,sub:'次答题记录',color:'bg-teal-600'},
+    {label:'历史最高',value:best||'--',sub:'平均分 '+avg,color:'bg-amber-500'}
+  ];
+  return cards.map(c=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4 shadow-sm">
+      <div class="${c.color} w-11 h-11 rounded-lg text-white flex items-center justify-center text-lg font-bold">${String(c.value).slice(0,2)}</div>
+      <div><p class="text-sm text-slate-500">${c.label}</p>
+        <p class="text-2xl font-bold text-slate-800 leading-tight">${c.value}</p>
+        <p class="text-xs text-slate-400">${c.sub}</p></div>
+    </div>`).join('');
+}
+
+function viewHome(){
+  const recent = history.slice(-3).reverse();
+  const menus=[
+    {t:'专项刷题',d:'听力 / 阅读 / 翻译逐题精练',icon:'📝',act:"startPractice(null)",color:'border-teal-500 text-teal-700 bg-teal-50'},
+    {t:'全真模拟考试',d:'125分钟计时 · 自动阅卷评分',icon:'⏱️',act:"go('examIntro')",color:'border-blue-600 text-blue-700 bg-blue-50'},
+    {t:'错题本',d:`${wrongBook.length} 道错题待攻克`,icon:'📕',act:"go('wrong')",color:'border-red-500 text-red-700 bg-red-50'},
+    {t:'历史成绩',d:'分数走势与历次模考记录',icon:'📊',act:"go('history')",color:'border-amber-500 text-amber-700 bg-amber-50'}
+  ];
+  return `
+  <div class="rounded-2xl bg-gradient-to-r from-[#16365c] to-[#2c5a8f] text-white p-5 sm:p-7 mb-5 shadow">
+    <h1 class="text-xl sm:text-2xl font-bold">欢迎使用 CET-4 全真模考系统</h1>
+    <p class="text-white/80 text-sm mt-1.5">满分 710 分 · 合格线 425 分 · 题库 45 题 · 所有数据保存在本机浏览器</p>
+  </div>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">${statCards()}</div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+    ${menus.map(m=>`
+      <button onclick="${m.act}" class="text-left bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition flex items-center gap-4">
+        <span class="w-12 h-12 rounded-lg border ${m.color} flex items-center justify-center text-2xl">${m.icon}</span>
+        <span><span class="block font-bold text-lg text-slate-800">${m.t}</span>
+        <span class="block text-sm text-slate-500">${m.d}</span></span>
+      </button>`).join('')}
+  </div>
+  <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold text-slate-800">最近模考记录</h2>
+      <button onclick="go('history')" class="text-sm text-blue-600 hover:underline">查看全部</button>
+    </div>
+    ${recent.length?`
+      <div class="divide-y divide-slate-100">
+        ${recent.map(r=>`
+          <div class="py-2.5 flex items-center justify-between text-sm">
+            <span class="text-slate-500">${new Date(r.date).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+            <span class="flex gap-3 text-slate-600">
+              <span class="hidden sm:inline">听力 ${r.l}</span><span class="hidden sm:inline">阅读 ${r.r}</span><span class="hidden sm:inline">翻译 ${r.t}</span>
+              <b class="${r.total>=PASS?'text-green-600':'text-red-500'} text-base">${r.total} 分</b>
+            </span>
+          </div>`).join('')}
+      </div>`:`<p class="text-slate-400 text-sm py-4 text-center">还没有模考记录，点击「全真模拟考试」开始吧</p>`}
+  </div>
+  <p class="text-center text-xs text-slate-400 mt-6"><button onclick="resetAll()" class="hover:text-red-500">清除本机全部数据</button></p>`;
+}
+
+/* ============================================================
+ * 八、全真模拟考试
+ * ============================================================ */
+function viewExamIntro(){
+  const draft = LS.get(K.draft,null);
+  return `
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-8 max-w-2xl mx-auto">
+    <h1 class="text-xl font-bold text-slate-800 mb-4">全真模拟考试 · 考生须知</h1>
+    <ul class="text-sm sm:text-[15px] text-slate-600 space-y-2.5 leading-relaxed">
+      <li>1. 试卷共 <b>45 题</b>：听力理解 15 题、阅读理解 20 题、翻译 10 题。</li>
+      <li>2. 考试总时长 <b>125 分钟</b>，倒计时置顶显示，时间耗尽系统将<b>强制交卷</b>。</li>
+      <li>3. 满分 710 分（听力 248.5、阅读 248.5、翻译 213），<b>425 分合格</b>。</li>
+      <li>4. 可随时标记题目、点击题号跳转；答题结果实时缓存，意外关闭后可继续考试。</li>
+      <li>5. 听力题可点击播放按钮（浏览器语音合成），提交后在解析中查看听力原文。</li>
+    </ul>
+    <div class="mt-6 flex flex-col sm:flex-row gap-3">
+      <button onclick="beginExam(false)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg">开始新考试</button>
+      ${draft?`<button onclick="beginExam(true)" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-lg">继续上次考试（剩余 ${fmt(draft.remaining)}）</button>`:''}
+      <button onclick="go('home')" class="sm:w-28 border border-slate-300 hover:bg-slate-50 py-3 rounded-lg">返回</button>
+    </div>
+  </div>`;
+}
+
+function beginExam(cont){
+  const d = cont?LS.get(K.draft,null):null;
+  exam = {
+    answers: d?.answers||{},
+    marks:   d?.marks||{},
+    idx:     d?.idx||0,
+    remaining:d?.remaining??EXAM_MIN*60
+  };
+  if(!cont) LS.del(K.draft);
+  go('exam');
+  renderExamQuestion();
+  startTimer();
+  window.onbeforeunload = ()=>'考试正在进行，确定离开本页吗？';
+}
+
+function startTimer(){
+  if(timerId) clearInterval(timerId);
+  updateTimer();
+  timerId=setInterval(()=>{
+    exam.remaining--;
+    saveDraft();
+    updateTimer();
+    if(exam.remaining<=0){ clearInterval(timerId); timerId=null; finishExam(true); }
+  },1000);
+}
+function updateTimer(){
+  const el=$('#timer-text'); if(!el) return;
+  el.textContent=fmt(Math.max(0,exam.remaining));
+  el.classList.toggle('timer-danger',exam.remaining<=300);
+  el.classList.toggle('bg-red-600',exam.remaining<=300);
+  el.classList.toggle('bg-white/15',exam.remaining>300);
+}
+function saveDraft(){
+  LS.set(K.draft,{answers:exam.answers,marks:exam.marks,idx:exam.idx,remaining:exam.remaining});
+}
+
+/* ---------- 考试外壳：顶部计时条 + 左题区 + 右导航 ---------- */
+function viewExamShell(){
+  return `
+  <div class="min-h-screen flex flex-col bg-slate-100">
+    <div class="bg-[#16365c] text-white sticky top-0 z-30 shadow-lg">
+      <div class="px-3 sm:px-5 h-14 flex items-center justify-between gap-2">
+        <span class="font-semibold text-sm sm:text-base whitespace-nowrap">CET-4 全真模考</span>
+        <span class="flex items-center gap-2 text-sm">
+          <span class="hidden sm:inline text-white/70">剩余时间</span>
+          <span id="timer-text" class="bg-white/15 px-3 py-1 rounded-md font-mono font-bold text-lg tracking-wider">${fmt(exam.remaining)}</span>
+        </span>
+        <div class="flex items-center gap-2 sm:gap-3">
+          <span class="text-xs sm:text-sm text-white/80">已答 <b id="answered-cnt">0</b>/${TOTAL_Q}</span>
+          <button onclick="submitConfirm()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-3 sm:px-4 py-1.5 rounded-md">交卷</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-5 grid lg:grid-cols-[1fr_300px] gap-4">
+      <div id="q-area" class="min-w-0"></div>
+      <aside class="hidden lg:block">
+        <div class="sticky top-20 bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <h3 class="font-bold text-slate-800 mb-2">答题卡</h3>
+          <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1 mb-3">
+            <span class="flex items-center gap-1"><i class="w-3 h-3 rounded bg-blue-600 inline-block"></i>已答</span>
+            <span class="flex items-center gap-1"><i class="w-3 h-3 rounded border border-slate-300 inline-block"></i>未答</span>
+            <span class="flex items-center gap-1"><i class="w-3 h-3 rounded border-2 border-amber-500 inline-block"></i>标记</span>
+          </div>
+          <div id="nav-grid" class="space-y-3">${navHTML()}</div>
+          <button onclick="submitConfirm()" class="mt-4 w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg">交卷</button>
+        </div>
+      </aside>
+    </div>
+    <!-- 移动端：答题卡悬浮按钮 + 底部弹出层 -->
+    <button onclick="openSheet()" class="lg:hidden fixed bottom-4 right-4 z-30 bg-[#16365c] text-white rounded-full shadow-lg px-4 py-3 text-sm font-semibold">
+      答题卡 <b id="fab-cnt">0</b>/${TOTAL_Q}
+    </button>
+    <div id="sheet" class="lg:hidden fixed inset-0 z-40 hidden">
+      <div class="absolute inset-0 bg-black/40" onclick="closeSheet()"></div>
+      <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[75vh] overflow-y-auto p-4">
+        <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3"></div>
+        <h3 class="font-bold text-slate-800 mb-3">答题卡</h3>
+        <div class="space-y-3">${navHTML()}</div>
+        <div class="flex gap-3 mt-4">
+          <button onclick="closeSheet()" class="flex-1 border border-slate-300 py-2.5 rounded-lg">继续答题</button>
+          <button onclick="submitConfirm()" class="flex-1 bg-red-600 text-white font-semibold py-2.5 rounded-lg">交卷</button>
+        </div>
+      </div>
+    </div>
+    <!-- 交卷确认弹窗 -->
+    <div id="submit-modal" class="fixed inset-0 z-50 hidden modal-mask flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl w-full max-w-sm p-5">
+        <h3 class="font-bold text-lg text-slate-800 mb-2">确认交卷？</h3>
+        <p id="modal-txt" class="text-sm text-slate-500 mb-5"></p>
+        <div class="flex gap-3">
+          <button onclick="closeModal()" class="flex-1 border border-slate-300 py-2.5 rounded-lg">再检查一下</button>
+          <button onclick="finishExam(false)" class="flex-1 bg-red-600 text-white font-semibold py-2.5 rounded-lg">确认交卷</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openSheet(){ $('#sheet').classList.remove('hidden'); }
+function closeSheet(){ $('#sheet').classList.add('hidden'); }
+function submitConfirm(){
+  const answered=answeredCount();
+  $('#modal-txt').innerHTML = answered===TOTAL_Q
+    ? '你已完成全部题目，交卷后将立即阅卷评分。'
+    : `还有 <b class="text-red-500">${TOTAL_Q-answered}</b> 道题目未作答，未答题目将计为错误。确定交卷吗？`;
+  $('#submit-modal').classList.remove('hidden');
+}
+function closeModal(){ $('#submit-modal').classList.add('hidden'); }
+
+/* ---------- 题号导航 ---------- */
+function navHTML(){
+  return SECTION_RANGE.map(([sec,a,b])=>`
+    <div>
+      <p class="text-xs font-semibold text-slate-500 mb-1.5">${SECTIONS[sec].name}</p>
+      <div class="grid grid-cols-5 gap-1.5">
+        ${QUESTIONS.slice(a-1,b).map(q=>`<button data-cell="${q.id}" onclick="jump(${q.id-1})" class="${cellClass(q.id)}">${cellInner(q.id)}</button>`).join('')}
+      </div>
+    </div>`).join('');
+}
+function answeredOf(id){ return !!exam.answers[id] && exam.answers[id].length>0; }
+function cellClass(id){
+  let c='relative h-9 rounded-md text-sm font-medium border flex items-center justify-center transition ';
+  if(answeredOf(id)) c+='bg-blue-600 border-blue-600 text-white ';
+  else c+='bg-white border-slate-300 text-slate-600 ';
+  if(exam.marks[id]) c+='ring-2 ring-amber-400 ring-inset ';
+  if(id===QUESTIONS[exam.idx].id) c+='outline outline-2 outline-offset-1 outline-slate-800 ';
+  return c;
+}
+function cellInner(id){ return id+(exam.marks[id]?'<span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-white"></span>':''); }
+function syncCells(){
+  QUESTIONS.forEach(q=>document.querySelectorAll(`[data-cell="${q.id}"]`).forEach(el=>{
+    el.className=cellClass(q.id); el.innerHTML=cellInner(q.id);
+  }));
+  $('#answered-cnt').textContent=answeredCount();
+  $('#fab-cnt').textContent=answeredCount();
+}
+function answeredCount(){ return QUESTIONS.filter(q=>answeredOf(q.id)).length; }
+
+/* ---------- 题目区渲染 ---------- */
+function audioCard(key){
+  return `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+    <button onclick="speakGroup('${key}',event)" class="play-btn flex-none w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center">▶</button>
+    <div><p class="font-semibold text-slate-700 text-sm">${PASSAGES[key].title}</p>
+    <p class="text-xs text-slate-400">点击播放录音 / 播放中再点停止</p></div>
+  </div>`;
+}
+function passageBlock(q){
+  const p=PASSAGES[q.group]; if(!p) return '';
+  const first = !QUESTIONS[exam.idx-1] || QUESTIONS[exam.idx-1].group!==q.group;
+  if(p.type==='audio'){
+    return first?audioCard(q.group):`<details class="bg-white border border-slate-200 rounded-lg"><summary class="p-3 text-sm text-slate-600">🎧 重听本段录音（${p.title}）</summary><div class="px-3 pb-3">${audioCard(q.group)}</div></details>`;
+  }
+  let body='';
+  if(p.dir) body+=`<p class="text-sm text-slate-500 mb-2">${p.dir}</p>`;
+  if(p.type==='match'){
+    body+='<div class="space-y-3">'+p.paragraphs.map(x=>`<p class="text-[15px] leading-relaxed"><b class="text-blue-700 mr-1">[${x.k}]</b>${x.t}</p>`).join('')+'</div>';
+  }else{
+    body+=`<p class="text-[15px] leading-relaxed">${p.text.replace(/\{\{(\d+)\}\}/g,'<b class="text-blue-700 not-italic"> [$1] </b>')}</p>`;
+  }
+  return `<details ${first?'open':''} class="passage-details bg-white border border-slate-200 rounded-lg mb-4">
+    <summary class="p-3 text-sm font-semibold text-slate-700">📖 ${p.title}</summary>
+    <div class="px-4 pb-4">${body}</div></details>`;
+}
+
+function questionOptionsHTML(q, sel){
+  return Object.entries(q.o).map(([k,v])=>{
+    const on=sel.includes(k);
+    return `<button onclick="selectOpt('${k}')" class="opt w-full flex items-start gap-3 p-3 rounded-lg border text-left transition
+      ${on?'opt-act border-blue-600 bg-blue-50 ring-1 ring-blue-600':'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50'}">
+      <span class="letter-badge mt-0.5">${k}</span><span class="flex-1 text-[15px]">${v}</span></button>`;
+  }).join('');
+}
+
+function renderExamQuestion(){
+  const q=QUESTIONS[exam.idx], sel=exam.answers[q.id]||[];
+  $('#q-area').innerHTML=`
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="text-xs px-2 py-0.5 rounded ${SECTIONS[q.section].cls} font-semibold">${SECTIONS[q.section].name}</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">${q.type==='multi'?'多选题':'单选题'}</span>
+        <span class="text-xs text-slate-400">第 ${q.id} 题 / 共 ${TOTAL_Q} 题</span>
+        <button onclick="toggleMark()" class="ml-auto text-sm px-3 py-1 rounded-md border transition
+          ${exam.marks[q.id]?'border-amber-500 text-amber-600 bg-amber-50':'border-slate-300 text-slate-500 hover:border-amber-400'}">
+          ${exam.marks[q.id]?'🚩 已标记':'☆ 标记本题'}</button>
+      </div>
+      ${passageBlock(q)}
+      <h2 class="font-semibold text-base sm:text-lg leading-relaxed mb-3">${q.q}</h2>
+      ${q.type==='multi'?'<p class="text-xs text-amber-600 mb-2">提示：本题为多选题，请选择所有正确选项</p>':''}
+      <div class="space-y-2.5">${questionOptionsHTML(q,sel)}</div>
+      <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+        <button onclick="prevQ()" ${exam.idx===0?'disabled':''} class="px-4 py-2 rounded-lg border border-slate-300 text-sm disabled:opacity-40 hover:bg-slate-50">← 上一题</button>
+        <span class="text-xs text-slate-400">${exam.idx+1} / ${TOTAL_Q}</span>
+        ${exam.idx<TOTAL_Q-1
+          ?'<button onclick="nextQ()" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">下一题 →</button>'
+          :'<button onclick="submitConfirm()" class="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold">提交试卷</button>'}
+      </div>
+    </div>`;
+}
+
+function selectOpt(k){
+  const q=QUESTIONS[exam.idx], id=q.id;
+  if(q.type==='single') exam.answers[id]=[k];
+  else{
+    const cur=exam.answers[id]||[];
+    exam.answers[id]=cur.includes(k)?cur.filter(x=>x!==k):[...cur,k];
+  }
+  saveDraft();
+  renderExamQuestion();
+  syncCells();
+}
+function toggleMark(){
+  const id=QUESTIONS[exam.idx].id;
+  exam.marks[id]=!exam.marks[id];
+  if(!exam.marks[id]) delete exam.marks[id];
+  saveDraft(); renderExamQuestion(); syncCells();
+}
+function jump(i){ exam.idx=i; saveDraft(); renderExamQuestion(); syncCells(); closeSheet(); window.scrollTo(0,0); }
+function prevQ(){ if(exam.idx>0){ exam.idx--; saveDraft(); renderExamQuestion(); syncCells(); } }
+function nextQ(){ if(exam.idx<TOTAL_Q-1){ exam.idx++; saveDraft(); renderExamQuestion(); syncCells(); window.scrollTo(0,0); } }
+
+/* ---------- 阅卷 ---------- */
+function gradeAll(answers){
+  const weight={listening:0,reading:0,translation:0};
+  const details=[]; let answered=0, perfect=0;
+  QUESTIONS.forEach(q=>{
+    const sel=answers[q.id]||[];
+    if(sel.length) answered++;
+    const ratio=ratioOf(q,sel);
+    weight[q.section]+=ratio;
+    if(ratio===1 && sel.length) perfect++;
+    details.push({id,sel,ratio});
+  });
+  const l=Math.round(weight.listening/15*SEC_MAX.listening);
+  const r=Math.round(weight.reading/20*SEC_MAX.reading);
+  const t=Math.round(weight.translation/10*SEC_MAX.translation);
+  const total=l+r+t;
+  return { date:Date.now(), l,r,t,total,
+    acc:Math.round((l+r+t)/FULL*100),
+    answered, perfect, details,
+    used:EXAM_MIN*60-exam.remaining };
+}
+
+function finishExam(auto){
+  if(timerId){ clearInterval(timerId); timerId=null; }
+  window.onbeforeunload=null;
+  if(auto && speechSynthesis) speechSynthesis.cancel();
+  const res=gradeAll(exam.answers);
+  res.auto=auto;
+  history.push(res); LS.set(K.history,history);
+  res.details.filter(d=>d.ratio<1).forEach(d=>addWrong(d.id,'exam',false));
+  LS.set(K.wrong,wrongBook);
+  LS.del(K.draft);
+  lastResult=res; exam=null;
+  go('result');
+}
+
+/* ---------- 成绩报告 ---------- */
+function scoreRing(total){
+  const r=52,c=2*Math.PI*r,off=c*(1-total/FULL);
+  return `<div class="relative w-40 h-40 mx-auto">
+    <svg viewBox="0 0 120 120" class="w-full h-full -rotate-90">
+      <circle cx="60" cy="60" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="9"/>
+      <circle cx="60" cy="60" r="${r}" fill="none" stroke="${total>=PASS?'#16a34a':'#dc2626'}" stroke-width="9" stroke-linecap="round"
+        stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
+    </svg>
+    <div class="absolute inset-0 flex flex-col items-center justify-center">
+      <span class="text-4xl font-extrabold text-slate-800">${total}</span>
+      <span class="text-xs text-slate-400">满分 ${FULL}</span>
+    </div>
+  </div>`;
+}
+function secBar(name,score,max,color){
+  return `<div>
+    <div class="flex justify-between text-sm mb-1"><span class="text-slate-600">${name}</span>
+      <span class="font-semibold text-slate-800">${score}<span class="text-slate-400 font-normal"> / ${max}</span></span></div>
+    <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+      <div class="h-full ${color}" style="width:${(score/max*100).toFixed(1)}%"></div>
+    </div></div>`;
+}
+function viewResult(){
+  const r=lastResult; if(!r){ go('home'); return ''; }
+  return `
+  <div class="max-w-3xl mx-auto space-y-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-7">
+      <div class="text-center mb-4">
+        <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold ${r.auto?'bg-amber-100 text-amber-700':'bg-blue-100 text-blue-700'}">
+          ${r.auto?'⏰ 时间已到，系统自动交卷':'✅ 已交卷，阅卷完成'}</span>
+      </div>
+      ${scoreRing(r.total)}
+      <p class="text-center mt-3 text-lg font-bold ${r.total>=PASS?'text-green-600':'text-red-500'}">
+        ${r.total>=PASS?'恭喜，成绩达到合格线 425 分':'未达到合格线 425 分，继续加油'}
+      </p>
+      <div class="grid grid-cols-3 gap-2 mt-5 text-center">
+        <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">答对题数</p><p class="font-bold text-slate-800">${r.perfect}/${TOTAL_Q}</p></div>
+        <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">正确率</p><p class="font-bold text-slate-800">${r.acc}%</p></div>
+        <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">用时</p><p class="font-bold text-slate-800">${fmt(r.used)}</p></div>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+      <h2 class="font-bold text-slate-800">单项成绩</h2>
+      ${secBar('听力理解',r.l,248.5,'bg-blue-500')}
+      ${secBar('阅读理解',r.r,248.5,'bg-teal-500')}
+      ${secBar('翻译',r.t,213,'bg-amber-500')}
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm">
+      <button onclick="toggleReview()" class="w-full text-left p-4 font-bold text-slate-800 flex justify-between items-center">
+        <span>查看全部题目解析</span><span id="review-arrow">▾</span>
+      </button>
+      <div id="review-box" class="hidden px-4 pb-4 space-y-3">${r.details.map(d=>reviewItemHTML(QMAP[d.id],d)).join('')}</div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-3 pb-4">
+      <button onclick="go('home')" class="flex-1 border border-slate-300 py-3 rounded-lg font-semibold hover:bg-slate-50">返回首页</button>
+      <button onclick="go('examIntro')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold">再考一次</button>
+      <button onclick="go('wrong')" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold">错题本</button>
+    </div>
+  </div>`;
+}
+function toggleReview(){
+  const box=$('#review-box'), hid=box.classList.toggle('hidden');
+  $('#review-arrow').textContent=hid?'▾':'▴';
+}
+function reviewItemHTML(q,d){
+  const optHTML=Object.entries(q.o).map(([k,v])=>{
+    const ans=q.a.includes(k), picked=d.sel.includes(k);
+    let cls='border-slate-200 bg-white';
+    if(ans) cls='opt-ok border-green-500 bg-green-50';
+    else if(picked) cls='opt-bad border-red-400 bg-red-50';
+    return `<div class="flex items-start gap-2 p-2 rounded border ${cls} text-sm">
+      <span class="letter-badge ${ans?'!bg-green-600 !border-green-600':picked?'!bg-red-600 !border-red-600':''}">${k}</span>
+      <span class="flex-1">${v}</span>${ans?'<span class="text-green-600 text-xs mt-1">正确答案</span>':picked?'<span class="text-red-500 text-xs mt-1">你的选择</span>':''}</div>`;
+  }).join('');
+  const p=PASSAGES[q.group];
+  return `<div class="border border-slate-200 rounded-lg p-3">
+    <p class="text-sm font-semibold mb-2"><span class="text-xs px-1.5 py-0.5 rounded mr-2 ${SECTIONS[q.section].cls}">${SECTIONS[q.section].short}</span>${q.id}. ${q.q}</p>
+    <div class="space-y-1.5">${optHTML}</div>
+    <p class="text-sm text-slate-600 bg-slate-50 rounded p-2.5 mt-2"><b class="text-slate-700">解析：</b>${q.e}</p>
+    ${p&&p.type==='audio'?`<p class="text-xs text-slate-500 bg-slate-50 rounded p-2.5 mt-1"><b>听力原文：</b>${p.text}</p>`:''}
+  </div>`;
+}
+
+/* ============================================================
+ * 九、专项刷题
+ * ============================================================ */
+function startPractice(sec){
+  const ids=QUESTIONS.filter(q=>!sec||q.section===sec).map(q=>q.id);
+  practice={ids,idx:0,sel:[],revealed:false,results:{},mode:'practice',sec};
+  go('practice');
+}
+function startRedo(){
+  if(!wrongBook.length) return;
+  practice={ids:[...wrongBook].sort((a,b)=>a-b),idx:0,sel:[],revealed:false,results:{},mode:'redo'};
+  go('practice');
+}
+function pQuestion(){ return QMAP[practice.ids[practice.idx]]; }
+
+function passageBlockP(q){
+  const p=PASSAGES[q.group]; if(!p) return '';
+  const first=!practice.idx || QMAP[practice.ids[practice.idx-1]].group!==q.group;
+  if(p.type==='audio'){
+    return first?audioCard(q.group):`<details class="bg-white border border-slate-200 rounded-lg"><summary class="p-3 text-sm text-slate-600">🎧 重听本段录音</summary><div class="px-3 pb-3">${audioCard(q.group)}</div></details>`;
+  }
+  let body=p.dir?`<p class="text-sm text-slate-500 mb-2">${p.dir}</p>`:'';
+  if(p.type==='match') body+='<div class="space-y-3">'+p.paragraphs.map(x=>`<p class="text-[15px] leading-relaxed"><b class="text-blue-700 mr-1">[${x.k}]</b>${x.t}</p>`).join('')+'</div>';
+  else body+=`<p class="text-[15px] leading-relaxed">${p.text.replace(/\{\{(\d+)\}\}/g,'<b class="text-blue-700"> [$1] </b>')}</p>`;
+  return `<details ${first?'open':''} class="passage-details bg-white border border-slate-200 rounded-lg mb-4">
+    <summary class="p-3 text-sm font-semibold text-slate-700">📖 ${p.title}</summary><div class="px-4 pb-4">${body}</div></details>`;
+}
+
+function viewPractice(){
+  if(!practice){ return startPracticeChoose(); }
+  const total=practice.ids.length;
+  if(practice.idx>=total) return practiceSummary();
+  const q=pQuestion();
+  return `
+  <div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-between mb-3 text-sm">
+      <span class="font-semibold text-slate-700">${practice.mode==='redo'?'错题重做':'专项刷题'} · ${SECTIONS[q.section].name}</span>
+      <span class="text-slate-400">${practice.idx+1} / ${total} · 进度 ${Math.round(practice.idx/total*100)}%</span>
+    </div>
+    <div class="h-1.5 bg-slate-200 rounded-full mb-4 overflow-hidden"><div class="h-full bg-blue-600 transition-all" style="width:${practice.idx/total*100}%"></div></div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="text-xs px-2 py-0.5 rounded ${SECTIONS[q.section].cls} font-semibold">${SECTIONS[q.section].name}</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">${q.type==='multi'?'多选题':'单选题'}</span>
+      </div>
+      ${passageBlockP(q)}
+      <h2 class="font-semibold text-base sm:text-lg leading-relaxed mb-3">${q.q}</h2>
+      ${q.type==='multi'?'<p class="text-xs text-amber-600 mb-2">多选题：选择所有正确选项</p>':''}
+      <div class="space-y-2.5">
+        ${Object.entries(q.o).map(([k,v])=>{
+          const on=practice.sel.includes(k);
+          let cls='border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50';
+          if(practice.revealed){
+            if(q.a.includes(k)) cls='opt-ok border-green-500 bg-green-50';
+            else if(on) cls='opt-bad border-red-400 bg-red-50';
+          }else if(on) cls='opt-act border-blue-600 bg-blue-50 ring-1 ring-blue-600';
+          return `<button ${practice.revealed?'disabled':''} onclick="pSelect('${k}')" class="w-full flex items-start gap-3 p-3 rounded-lg border text-left transition ${cls}">
+            <span class="letter-badge mt-0.5 ${practice.revealed&&q.a.includes(k)?'!bg-green-600 !border-green-600':practice.revealed&&on?'!bg-red-600 !border-red-600':''}">${k}</span>
+            <span class="flex-1 text-[15px]">${v}</span></button>`;
+        }).join('')}
+      </div>
+      ${practice.revealed?`
+        <div class="mt-4 rounded-lg p-3.5 border ${practice.lastRatio===1?'border-green-200 bg-green-50':'border-red-200 bg-red-50'}">
+          <p class="font-semibold ${practice.lastRatio===1?'text-green-700':'text-red-600'} mb-1">
+            ${practice.lastRatio===1?'✔ 回答正确':(practice.sel.length?'✘ 回答错误':'未作答')}　
+            <span class="text-slate-500 font-normal text-sm">正确答案：${q.a.join('、')}</span></p>
+          <p class="text-sm text-slate-600"><b>解析：</b>${q.e}</p>
+          ${PASSAGES[q.group]?.type==='audio'?`<p class="text-xs text-slate-500 mt-2"><b>听力原文：</b>${PASSAGES[q.group].text}</p>`:''}
+        </div>`:''}
+      <div class="mt-5 pt-4 border-t border-slate-100 flex justify-end gap-3">
+        <button onclick="exitPractice()" class="px-4 py-2 rounded-lg border border-slate-300 text-sm">退出</button>
+        ${practice.revealed
+          ? `<button onclick="pNext()" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">${practice.idx===total-1?'查看结果 →':'下一题 →'}</button>`
+          : `<button onclick="pSubmit()" ${practice.sel.length?'':'disabled'} class="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-40">提交答案</button>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function startPracticeChoose(){
+  const cats=[
+    {sec:'listening',name:'听力理解',n:15,d:'新闻 / 对话 / 篇章',color:'border-blue-500 bg-blue-50 text-blue-700'},
+    {sec:'reading',name:'阅读理解',n:20,d:'词汇 / 匹配 / 细读',color:'border-teal-500 bg-teal-50 text-teal-700'},
+    {sec:'translation',name:'翻译',n:10,d:'语法句型选择最佳译法',color:'border-amber-500 bg-amber-50 text-amber-700'},
+    {sec:null,name:'全部题型',n:45,d:'整套题库顺序练习',color:'border-slate-500 bg-slate-50 text-slate-700'}
+  ];
+  return `
+  <div class="max-w-3xl mx-auto">
+    <h1 class="text-lg font-bold text-slate-800 mb-1">专项刷题</h1>
+    <p class="text-sm text-slate-500 mb-4">选择一个分类开始，提交后立即查看解析，错题自动收入错题本。</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      ${cats.map(c=>`
+        <button onclick="startPractice(${c.sec?`'${c.sec}'`:'null'})" class="text-left bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
+          <span class="inline-block px-2.5 py-1 rounded-lg border text-sm font-semibold ${c.color}">${c.name} · ${c.n}题</span>
+          <p class="text-sm text-slate-500 mt-3">${c.d}</p>
+        </button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function pSelect(k){
+  const q=pQuestion();
+  if(q.type==='single') practice.sel=[k];
+  else practice.sel=practice.sel.includes(k)?practice.sel.filter(x=>x!==k):[...practice.sel,k];
+  renderPracticeOnly();
+}
+function pSubmit(){
+  const q=pQuestion(), ratio=ratioOf(q,practice.sel);
+  practice.revealed=true; practice.lastRatio=ratio;
+  practice.results[q.id]=ratio;
+  /* 记录刷题统计 */
+  const rec=pLog[q.id]||{n:0,c:0};
+  rec.n++; if(ratio===1) rec.c++; pLog[q.id]=rec; LS.set(K.log,pLog);
+  /* 错题入库 / 重做正确则移除 */
+  if(ratio<1) addWrong(q.id,'practice',false);
+  if(practice.mode==='redo' && ratio===1) removeWrong(q.id,false);
+  renderPracticeOnly();
+}
+function pNext(){ practice.idx++; practice.sel=[]; practice.revealed=false; renderPracticeOnly(); window.scrollTo(0,0); }
+function exitPractice(){ practice=null; go('home'); }
+function renderPracticeOnly(){ $('#app').innerHTML=viewPractice(); }
+
+function practiceSummary(){
+  const entries=Object.entries(practice.results);
+  const weighted=entries.reduce((a,[,r])=>a+r,0);
+  const perfect=entries.filter(([,r])=>r===1).length;
+  const acc=Math.round(weighted/entries.length*100);
+  return `
+  <div class="max-w-md mx-auto bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
+    <p class="text-5xl mb-3">${acc>=80?'🏆':acc>=60?'👍':'💪'}</p>
+    <h1 class="text-xl font-bold text-slate-800">${practice.mode==='redo'?'错题重做完成':'本组练习完成'}</h1>
+    <div class="grid grid-cols-3 gap-2 my-5">
+      <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">答对</p><p class="text-xl font-bold text-green-600">${perfect}</p></div>
+      <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">总题数</p><p class="text-xl font-bold text-slate-800">${entries.length}</p></div>
+      <div class="bg-slate-50 rounded-lg py-3"><p class="text-xs text-slate-500">正确率</p><p class="text-xl font-bold text-blue-600">${acc}%</p></div>
+    </div>
+    ${practice.mode==='redo'?`<p class="text-sm text-slate-500 mb-4">做对的错题已自动移出错题本</p>`:''}
+    <div class="flex flex-col gap-3">
+      <button onclick="practice=null;go('wrong')" class="w-full border border-slate-300 py-2.5 rounded-lg">查看错题本</button>
+      <button onclick="practice=null;go('home')" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold">返回首页</button>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+ * 十、错题本
+ * ============================================================ */
+function addWrong(id,from,save=true){
+  if(!wrongBook.includes(id)) wrongBook.push(id);
+  if(save) LS.set(K.wrong,wrongBook);
+}
+function removeWrong(id,save=true){
+  wrongBook=wrongBook.filter(x=>x!==id);
+  if(save) LS.set(K.wrong,wrongBook);
+  if($('#app') && !exam && (!practice||practice.mode!=='redo')) renderW();
+}
+function clearWrong(){
+  if(!wrongBook.length) return;
+  if(confirm(`确定清空全部 ${wrongBook.length} 道错题吗？此操作不可恢复。`)){
+    wrongBook=[]; LS.set(K.wrong,wrongBook); renderW();
+  }
+}
+function renderW(){ $('#app').innerHTML=viewWrong(); }
+
+function viewWrong(){
+  const ids=[...wrongBook].sort((a,b)=>a-b);
+  const cnt={listening:0,reading:0,translation:0};
+  ids.forEach(id=>cnt[QMAP[id].section]++);
+  return `
+  <div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-bold text-slate-800">错题本 <span class="text-slate-400 font-normal">（共 ${ids.length} 题）</span></h1>
+      <div class="flex gap-2">
+        <button onclick="startRedo()" ${ids.length?'':'disabled'} class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-40">错题重做</button>
+        <button onclick="clearWrong()" ${ids.length?'':'disabled'} class="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-sm disabled:opacity-40">一键清空</button>
+      </div>
+    </div>
+    ${ids.length?`
+      <div class="flex gap-2 mb-4 text-xs">
+        <span class="px-2 py-1 rounded bg-blue-50 text-blue-700">听力 ${cnt.listening}</span>
+        <span class="px-2 py-1 rounded bg-teal-50 text-teal-700">阅读 ${cnt.reading}</span>
+        <span class="px-2 py-1 rounded bg-amber-50 text-amber-700">翻译 ${cnt.translation}</span>
+      </div>
+      <div class="space-y-3">
+        ${ids.map(id=>{ const q=QMAP[id];
+          return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-start gap-2 mb-3">
+              <span class="text-xs px-2 py-0.5 rounded mt-0.5 ${SECTIONS[q.section].cls} font-semibold">${SECTIONS[q.section].short}</span>
+              <h2 class="font-semibold text-[15px] flex-1 leading-relaxed">${q.id}. ${q.q}</h2>
+              <button onclick="removeWrong(${id})" class="text-slate-400 hover:text-red-500 text-sm" title="移除">✕</button>
+            </div>
+            <div class="space-y-1.5">
+              ${Object.entries(q.o).map(([k,v])=>`
+                <div class="flex items-start gap-2 p-2 rounded border text-sm ${q.a.includes(k)?'border-green-500 bg-green-50':'border-slate-200'}">
+                  <span class="letter-badge ${q.a.includes(k)?'!bg-green-600 !border-green-600':''}">${k}</span>
+                  <span class="flex-1">${v}</span>${q.a.includes(k)?'<span class="text-green-600 text-xs mt-1">正确答案</span>':''}</div>`).join('')}
+            </div>
+            <p class="text-sm text-slate-600 bg-slate-50 rounded p-2.5 mt-2"><b>解析：</b>${q.e}</p>
+          </div>`;
+        }).join('')}
+      </div>`
+      :`<div class="bg-white rounded-xl border border-dashed border-slate-300 py-16 text-center">
+          <p class="text-4xl mb-2">📭</p><p class="text-slate-400 text-sm">错题本是空的，刷题或模考中的错题会自动收录到这里</p>
+        </div>`}
+  </div>`;
+}
+
+/* ============================================================
+ * 十一、历史成绩
+ * ============================================================ */
+function scoreChart(records){
+  const w=720,h=230,padL=42,padR=18,padT=18,padB=30;
+  const xs=i=>records.length===1?(w/2):padL+i*((w-padL-padR)/(records.length-1));
+  const ys=v=>h-padB-(v/FULL)*(h-padB-padT);
+  const pts=records.map((r,i)=>`${xs(i).toFixed(1)},${ys(r.total).toFixed(1)}`).join(' ');
+  const y425=ys(PASS);
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full">
+    <line x1="${padL}" y1="${ys(0)}" x2="${w-padR}" y2="${ys(0)}" stroke="#e2e8f0"/>
+    <line x1="${padL}" y1="${y425}" x2="${w-padR}" y2="${y425}" stroke="#fca5a5" stroke-dasharray="5 4"/>
+    <text x="${w-padR+2}" y="${y425+4}" font-size="11" fill="#ef4444" text-anchor="end">425</text>
+    <text x="${w-padR+2}" y="${ys(710)+4}" font-size="11" fill="#94a3b8" text-anchor="end">710</text>
+    <polyline points="${pts}" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>
+    ${records.map((r,i)=>`
+      <circle cx="${xs(i)}" cy="${ys(r.total)}" r="4" fill="${r.total>=PASS?'#16a34a':'#dc2626'}" stroke="#fff" stroke-width="1.5"/>
+      <text x="${xs(i)}" y="${h-padB+18}" font-size="10.5" fill="#94a3b8" text-anchor="middle">
+        ${new Date(r.date).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})}</text>`).join('')}
+  </svg>`;
+}
+function delHistory(date){
+  if(confirm('确定删除这条模考记录吗？')){
+    history=history.filter(r=>r.date!==date); LS.set(K.history,history);
+    $('#app').innerHTML=viewHistory();
+  }
+}
+function clearHistory(){
+  if(!history.length) return;
+  if(confirm('确定清空全部历史成绩吗？')){
+    history=[]; LS.set(K.history,history); $('#app').innerHTML=viewHistory();
+  }
+}
+function viewHistory(){
+  const recs=[...history].reverse();
+  const avg=recs.length?Math.round(recs.reduce((a,b)=>a+b.total,0)/recs.length):0;
+  const best=recs.length?Math.max(...recs.map(r=>r.total)):0;
+  const passN=recs.filter(r=>r.total>=PASS).length;
+  return `
+  <div class="max-w-4xl mx-auto space-y-4">
+    <div class="flex items-center justify-between">
+      <h1 class="text-lg font-bold text-slate-800">历史成绩</h1>
+      ${recs.length?'<button onclick="clearHistory()" class="text-sm text-red-500 hover:underline">清空记录</button>':''}
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      ${[['模考次数',recs.length],['历史最高',best],['平均分',avg],['合格次数',passN]].map(([l,v])=>`
+        <div class="bg-white rounded-xl border border-slate-200 p-4 text-center shadow-sm">
+          <p class="text-xs text-slate-500">${l}</p><p class="text-2xl font-bold text-slate-800 mt-1">${v||'--'}</p></div>`).join('')}
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      <h2 class="font-bold text-slate-800 mb-2">分数走势</h2>
+      ${recs.length?scoreChart(recs):'<p class="text-slate-400 text-sm text-center py-10">暂无成绩，完成一次模考后这里会显示分数曲线</p>'}
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="hidden sm:grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr_0.6fr] text-xs text-slate-500 bg-slate-50 px-4 py-2.5 font-semibold">
+        <span>考试时间</span><span>总分</span><span>听力</span><span>阅读</span><span>翻译</span><span>正确率</span></div>
+      ${recs.length?`<div class="divide-y divide-slate-100">
+        ${recs.map(r=>`
+          <div class="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_0.6fr] items-center px-4 py-3 text-sm">
+            <span class="text-slate-500 text-xs sm:text-sm">${new Date(r.date).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+            <b class="${r.total>=PASS?'text-green-600':'text-red-500'}">${r.total}</b>
+            <span class="text-slate-600">${r.l}</span><span class="text-slate-600">${r.r}</span><span class="text-slate-600">${r.t}</span>
+            <span class="flex items-center justify-between gap-1 text-slate-600">${r.acc}%
+              <button onclick="delHistory(${r.date})" class="text-slate-300 hover:text-red-500">✕</button></span>
+          </div>`).join('')}
+      </div>`:'<p class="text-slate-400 text-sm text-center py-10">暂无模考记录</p>'}
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+ * 十二、重置数据
+ * ============================================================ */
+function resetAll(){
+  if(confirm('将清除本机所有模考记录、错题本、刷题记录与考试缓存，确定继续吗？')){
+    Object.values(K).forEach(k=>LS.del(k));
+    wrongBook=[]; history=[]; pLog={}; lastResult=null;
+    go('home');
+  }
+}
+
+/* ============================================================
+ * 启动
+ * ============================================================ */
+go('home');
+</script>
+</body>
+</html>
